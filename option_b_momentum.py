@@ -103,6 +103,45 @@ def _all_lookbacks_positive(momentum_scores: dict, etf: str) -> bool:
             info.get("ret_6m", -1) > 0)
 
 
+ZSCORE_EXIT_THRESHOLD = 1.2  # ETF must be 1.2 std devs above its own mean to re-enter
+
+
+def compute_zscore(df: pd.DataFrame, etf: str, as_of_idx: int,
+                   window: int = 63) -> float:
+    """
+    Z-score of the ETF's most recent daily return vs its rolling window.
+    Z = (today_ret - mean_ret) / std_ret
+    Z >= 1.2 means the ETF is showing unusually strong recent momentum.
+    """
+    ret_col = f"{etf}_Ret"
+    if ret_col not in df.columns:
+        return 0.0
+    rets = df[ret_col].iloc[max(0, as_of_idx - window): as_of_idx].dropna().values
+    if len(rets) < 10:
+        return 0.0
+    mean = np.mean(rets)
+    std  = np.std(rets)
+    if std < 1e-9:
+        return 0.0
+    today_ret = df[ret_col].iloc[as_of_idx - 1] if as_of_idx > 0 else 0.0
+    if np.isnan(today_ret):
+        return 0.0
+    return float((today_ret - mean) / std)
+
+
+def should_exit_cash(df: pd.DataFrame, best_etf: str, as_of_idx: int,
+                     momentum_scores: dict) -> bool:
+    """
+    Exit CASH only when BOTH conditions are met:
+    1. Top ETF has positive returns on all 3 lookbacks (trend confirmed)
+    2. Top ETF Z-score >= 1.2 (momentum is statistically strong, not just slightly positive)
+    """
+    if not _all_lookbacks_positive(momentum_scores, best_etf):
+        return False
+    z = compute_zscore(df, best_etf, as_of_idx)
+    return z >= ZSCORE_EXIT_THRESHOLD
+
+
 def execute_backtest_b(df: pd.DataFrame,
                        active_etfs: list,
                        test_slice: slice,
@@ -157,8 +196,8 @@ def execute_backtest_b(df: pd.DataFrame,
             in_cash     = True
             current_etf = None
 
-        # ── Exit CASH: top ETF positive on all lookbacks ───────────────────────
-        if in_cash and _all_lookbacks_positive(mom_scores, best_etf):
+        # ── Exit CASH: all lookbacks positive AND Z-score >= 1.2 ─────────────────
+        if in_cash and should_exit_cash(df, best_etf, idx, mom_scores):
             in_cash = False
 
         # ── Execute trade ──────────────────────────────────────────────────────
