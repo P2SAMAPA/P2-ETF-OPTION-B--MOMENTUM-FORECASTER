@@ -1,8 +1,8 @@
 """
 app.py
 P2-ETF-ARIMA-FORECASTER-TUST-CHINA
-ARIMA-based quantitative ETF trading strategy.
-All modules in root directory — flat structure.
+Shared shell with Option A (ARIMA) and Option B (Cross-Sectional Momentum).
+Each option is fully self-contained in its own module.
 """
 
 import os
@@ -10,22 +10,31 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from loader           import (load_dataset, check_data_freshness,
-                               prepare_data, dataset_summary,
-                               get_next_trading_day, get_est_time)
-from arima_forecaster import (run_all_etfs, select_best_lookback_arima)
-from run_analysis     import (compute_all_run_stats, get_reversal_scores)
-from selector         import (execute_backtest, select_signal,
-                               compute_benchmark_metrics)
-from cache            import (make_cache_key, save_cache, load_cache,
-                               make_lb_cache_key)
-from components       import (show_freshness_status, show_availability_warnings,
-                               show_signal_banner, show_etf_scores_table,
-                               show_hold_period_rationale, show_metrics_row,
-                               show_audit_trail)
+# ── Shared modules ────────────────────────────────────────────────────────────
+from loader     import (load_dataset, check_data_freshness, prepare_data,
+                         dataset_summary, get_next_trading_day, get_est_time)
+from cache      import (make_cache_key, save_cache, load_cache,
+                         make_lb_cache_key)
+from components import (show_freshness_status, show_availability_warnings,
+                         show_signal_banner, show_metrics_row,
+                         show_audit_trail, show_audit_trail_b,
+                         show_etf_scores_table, show_hold_period_rationale,
+                         show_momentum_scores_table)
+
+# ── Option A modules ──────────────────────────────────────────────────────────
+from option_a_arima_forecaster import (run_all_etfs,
+                                        select_best_lookback_arima)
+from option_a_run_analysis     import (compute_all_run_stats,
+                                        get_reversal_scores)
+from option_a_selector         import (execute_backtest, select_signal,
+                                        compute_benchmark_metrics)
+
+# ── Option B modules ──────────────────────────────────────────────────────────
+from option_b_momentum import (execute_backtest_b, compute_momentum_scores,
+                                select_top_etf, LOOKBACK_6M)
 
 st.set_page_config(
-    page_title="P2-ETF-ARIMA Forecaster",
+    page_title="P2-ETF Forecaster",
     page_icon="📈",
     layout="wide",
 )
@@ -40,6 +49,7 @@ for key, default in [
     ("arima_results",    None),
     ("run_scores",       None),
     ("signal",           None),
+    ("momentum_scores",  None),
     ("test_slice",       None),
     ("optimal_lookback", None),
     ("df_ready",         None),
@@ -48,6 +58,7 @@ for key, default in [
     ("availability",     None),
     ("spy_ann",          None),
     ("fee_bps",          10),
+    ("option",           "Option A — ARIMA Forecaster"),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -56,6 +67,14 @@ for key, default in [
 with st.sidebar:
     st.header("⚙️ Configuration")
     st.write(f"🕒 **EST:** {get_est_time().strftime('%H:%M:%S')}")
+    st.divider()
+
+    option = st.radio(
+        "🧭 Strategy",
+        ["Option A — ARIMA Forecaster", "Option B — Momentum Rotation"],
+        index=0,
+    )
+
     st.divider()
 
     start_yr = st.slider("📅 Start Year", 2008, 2025, 2015)
@@ -67,27 +86,43 @@ with st.sidebar:
 
     st.divider()
     st.caption("📐 **Data Split:** 80% train · 10% val · 10% OOS")
-    st.caption("🔍 **Auto-lookback:** 30 / 45 / 60d via val MAE")
-    st.caption("⏱️ **Hold periods:** 1d · 3d · 5d net of fees")
+
+    if option == "Option A — ARIMA Forecaster":
+        st.caption("🔍 **Auto-lookback:** 30 / 45 / 60d via val MAE")
+        st.caption("⏱️ **Hold periods:** 1d · 3d · 5d net of fees")
+        st.caption("📄 *Based on Xu et al., TUST China (2022)*")
+    else:
+        st.caption("📊 **Ranking:** 1m / 3m / 6m composite trailing return")
+        st.caption("🏆 **Selection:** Top 1 ETF daily")
+        st.caption("💸 **Fee:** Only charged on ETF switches")
+
     st.caption("🛡️ **CASH overlay:** 2-day ≤ −15% drawdown")
     st.divider()
 
     run_button = st.button(
-        "🚀 Run ARIMA Strategy",
+        f"🚀 Run {option.split(' — ')[0]}",
         type="primary",
         use_container_width=True,
     )
 
 # ── Title ─────────────────────────────────────────────────────────────────────
-st.title("📈 P2-ETF-ARIMA Forecaster")
-st.caption(
-    "ARIMA price forecasting · Consecutive run analysis (Apriori) · "
-    "Dynamic hold period selection net of fees · CASH drawdown overlay"
-)
-st.caption(
-    "📄 Based on: *A Quantitative Trading Strategy Based on A Position Management Model* "
-    "— Xu, Wang, Han et al., Tianjin University of Science & Technology (2022)"
-)
+st.title("📈 P2-ETF Forecaster")
+
+if option == "Option A — ARIMA Forecaster":
+    st.caption(
+        "**Option A:** ARIMA price forecasting · Consecutive run analysis · "
+        "Dynamic hold period (1d/3d/5d) · CASH drawdown overlay"
+    )
+    st.caption(
+        "📄 *Based on: A Quantitative Trading Strategy Based on A Position "
+        "Management Model — Xu et al., TUST China (2022)*"
+    )
+else:
+    st.caption(
+        "**Option B:** Cross-sectional momentum rotation · "
+        "Composite 1m/3m/6m trailing return ranking · "
+        "Top 1 ETF · Fee on switches only · CASH drawdown overlay"
+    )
 
 if not HF_TOKEN:
     st.error("❌ HF_TOKEN secret not found. Add it in HF Space settings.")
@@ -104,7 +139,6 @@ if df_raw.empty:
 freshness = check_data_freshness(df_raw)
 show_freshness_status(freshness)
 
-# ── Sidebar dataset info ──────────────────────────────────────────────────────
 with st.sidebar:
     st.divider()
     st.subheader("📦 Dataset Info")
@@ -119,6 +153,7 @@ with st.sidebar:
 # ── Run ───────────────────────────────────────────────────────────────────────
 if run_button:
     st.session_state.output_ready = False
+    st.session_state.option       = option
 
     with st.spinner("🔧 Preparing data..."):
         df, availability, active_etfs, tbill_rate = prepare_data(df_raw, start_yr)
@@ -133,69 +168,17 @@ if run_button:
     t1 = int(n * 0.80)
     t2 = int(n * 0.90)
     train_slice = slice(0, t1)
-    val_slice   = slice(t1, t2)
     test_slice  = slice(t2, n)
 
     st.info(
         f"📅 **{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}**  "
-        f"· Train: **{t1}** days · Val: **{t2-t1}** days · OOS: **{n-t2}** days  "
-        f"· Active ETFs: **{', '.join(active_etfs)}**"
+        f"· Train: **{t1}** · Val: **{t2-t1}** · OOS: **{n-t2}** days  "
+        f"· ETFs: **{', '.join(active_etfs)}**"
     )
 
     last_date_str = str(freshness.get("last_date", "unknown"))
 
-    # ── Auto-select lookback ──────────────────────────────────────────────────
-    lb_key    = make_lb_cache_key(last_date_str, start_yr, "80/10/10")
-    lb_cached = load_cache(lb_key)
-
-    if lb_cached is not None:
-        optimal_lookback = lb_cached["lookback"]
-        st.success(f"⚡ Cache hit · Optimal lookback: **{optimal_lookback}d**")
-    else:
-        with st.spinner("🔍 Auto-selecting lookback (30 / 45 / 60d) via val MAE..."):
-            optimal_lookback = select_best_lookback_arima(
-                df, active_etfs, t1, t2, candidates=[30, 45, 60],
-            )
-        save_cache(lb_key, {"lookback": optimal_lookback})
-        st.success(f"📐 Optimal lookback: **{optimal_lookback}d** (auto-selected)")
-
-    # ── Check result cache ────────────────────────────────────────────────────
-    cache_key   = make_cache_key(last_date_str, start_yr, fee_bps,
-                                  "80/10/10", optimal_lookback)
-    cached_data = load_cache(cache_key)
-
-    if cached_data is not None:
-        result = cached_data["result"]
-        st.success("⚡ Results loaded from cache — no retraining needed.")
-    else:
-        with st.spinner("📊 Computing run statistics on training data..."):
-            run_stats = compute_all_run_stats(df, active_etfs, train_slice)
-
-        with st.spinner("⏳ Running walk-forward ARIMA backtest on OOS data..."):
-            result = execute_backtest(
-                df=df,
-                active_etfs=active_etfs,
-                test_slice=test_slice,
-                run_stats=run_stats,
-                lookback=optimal_lookback,
-                fee_bps=fee_bps,
-                tbill_rate=tbill_rate,
-                hold_periods=HOLD_PERIODS,
-            )
-
-        save_cache(cache_key, {"result": result})
-
-    # ── Live next-day signal ──────────────────────────────────────────────────
-    with st.spinner("🔮 Computing next-day signal..."):
-        run_stats_live = compute_all_run_stats(df, active_etfs, slice(0, len(df)))
-        arima_results  = run_all_etfs(df, active_etfs, optimal_lookback, HOLD_PERIODS)
-        rev_scores     = get_reversal_scores(df, active_etfs, run_stats_live, len(df))
-        signal         = select_signal(
-            arima_results, rev_scores, df,
-            active_etfs, len(df), fee_bps, HOLD_PERIODS,
-        )
-
-    # ── SPY return for comparison ─────────────────────────────────────────────
+    # ── SPY ann return (shared) ───────────────────────────────────────────────
     spy_ann = None
     if "SPY_Ret" in df.columns:
         spy_raw = df["SPY_Ret"].iloc[test_slice].values.astype(float)
@@ -203,43 +186,143 @@ if run_button:
         if len(spy_raw) > 5:
             spy_ann = float(np.prod(1 + spy_raw) ** (252 / len(spy_raw)) - 1)
 
-    # ── Persist to session state ──────────────────────────────────────────────
-    st.session_state.update({
-        "output_ready":     True,
-        "result":           result,
-        "arima_results":    arima_results,
-        "run_scores":       rev_scores,
-        "signal":           signal,
-        "test_slice":       test_slice,
-        "optimal_lookback": optimal_lookback,
-        "df_ready":         df,
-        "tbill_rate":       tbill_rate,
-        "active_etfs":      active_etfs,
-        "availability":     availability,
-        "spy_ann":          spy_ann,
-        "fee_bps":          fee_bps,
-    })
+    # ═══════════════════════════════════════════════════════════════
+    # OPTION A — ARIMA
+    # ═══════════════════════════════════════════════════════════════
+    if option == "Option A — ARIMA Forecaster":
+
+        lb_key    = make_lb_cache_key(last_date_str, start_yr, "80/10/10_A")
+        lb_cached = load_cache(lb_key)
+
+        if lb_cached is not None:
+            optimal_lookback = lb_cached["lookback"]
+            st.success(f"⚡ Cache hit · Lookback: **{optimal_lookback}d**")
+        else:
+            with st.spinner("🔍 Auto-selecting lookback (30/45/60d)..."):
+                optimal_lookback = select_best_lookback_arima(
+                    df, active_etfs, t1, t2, candidates=[30, 45, 60],
+                )
+            save_cache(lb_key, {"lookback": optimal_lookback})
+            st.success(f"📐 Optimal lookback: **{optimal_lookback}d**")
+
+        cache_key   = make_cache_key(last_date_str, start_yr, fee_bps,
+                                      "80/10/10_A", optimal_lookback)
+        cached_data = load_cache(cache_key)
+
+        if cached_data is not None:
+            result = cached_data["result"]
+            st.success("⚡ Results from cache.")
+        else:
+            with st.spinner("📊 Computing run statistics..."):
+                run_stats = compute_all_run_stats(df, active_etfs, train_slice)
+
+            with st.spinner("⏳ Walk-forward ARIMA backtest on OOS..."):
+                result = execute_backtest(
+                    df=df, active_etfs=active_etfs,
+                    test_slice=test_slice, run_stats=run_stats,
+                    lookback=optimal_lookback, fee_bps=fee_bps,
+                    tbill_rate=tbill_rate, hold_periods=HOLD_PERIODS,
+                )
+            save_cache(cache_key, {"result": result})
+
+        with st.spinner("🔮 Computing next-day ARIMA signal..."):
+            run_stats_live = compute_all_run_stats(df, active_etfs,
+                                                    slice(0, len(df)))
+            arima_results  = run_all_etfs(df, active_etfs,
+                                           optimal_lookback, HOLD_PERIODS)
+            rev_scores     = get_reversal_scores(df, active_etfs,
+                                                  run_stats_live, len(df))
+            signal         = select_signal(arima_results, rev_scores, df,
+                                           active_etfs, len(df),
+                                           fee_bps, HOLD_PERIODS)
+
+        st.session_state.update({
+            "output_ready":     True,
+            "result":           result,
+            "arima_results":    arima_results,
+            "run_scores":       rev_scores,
+            "signal":           signal,
+            "momentum_scores":  None,
+            "test_slice":       test_slice,
+            "optimal_lookback": optimal_lookback,
+            "df_ready":         df,
+            "tbill_rate":       tbill_rate,
+            "active_etfs":      active_etfs,
+            "availability":     availability,
+            "spy_ann":          spy_ann,
+            "fee_bps":          fee_bps,
+            "option":           option,
+        })
+
+    # ═══════════════════════════════════════════════════════════════
+    # OPTION B — MOMENTUM
+    # ═══════════════════════════════════════════════════════════════
+    else:
+        cache_key   = make_cache_key(last_date_str, start_yr, fee_bps,
+                                      "80/10/10_B", 0)
+        cached_data = load_cache(cache_key)
+
+        if cached_data is not None:
+            result = cached_data["result"]
+            st.success("⚡ Results from cache.")
+        else:
+            with st.spinner("⏳ Running cross-sectional momentum backtest on OOS..."):
+                result = execute_backtest_b(
+                    df=df, active_etfs=active_etfs,
+                    test_slice=test_slice, lookback=LOOKBACK_6M,
+                    fee_bps=fee_bps, tbill_rate=tbill_rate,
+                )
+            save_cache(cache_key, {"result": result})
+
+        with st.spinner("🔮 Computing next-day momentum signal..."):
+            mom_scores           = compute_momentum_scores(df, active_etfs, len(df))
+            best_etf, best_score = select_top_etf(mom_scores)
+            in_cash_live         = best_score <= 0
+            signal = {
+                "etf":         "CASH" if in_cash_live else best_etf,
+                "hold_period": 1,
+                "net_score":   best_score,
+                "in_cash":     in_cash_live,
+                "scores":      {etf: {1: mom_scores[etf]["score"]}
+                                 for etf in active_etfs},
+            }
+
+        st.session_state.update({
+            "output_ready":     True,
+            "result":           result,
+            "arima_results":    None,
+            "run_scores":       None,
+            "signal":           signal,
+            "momentum_scores":  mom_scores,
+            "test_slice":       test_slice,
+            "optimal_lookback": None,
+            "df_ready":         df,
+            "tbill_rate":       tbill_rate,
+            "active_etfs":      active_etfs,
+            "availability":     availability,
+            "spy_ann":          spy_ann,
+            "fee_bps":          fee_bps,
+            "option":           option,
+        })
 
 # ── Render (persists across reruns) ──────────────────────────────────────────
 if not st.session_state.output_ready:
-    st.info("👈 Configure parameters and click **🚀 Run ARIMA Strategy**.")
+    st.info("👈 Configure parameters and click **🚀 Run**.")
     st.stop()
 
-result           = st.session_state.result
-arima_results    = st.session_state.arima_results
-run_scores       = st.session_state.run_scores
-signal           = st.session_state.signal
-df               = st.session_state.df_ready
-tbill_rate       = st.session_state.tbill_rate
-active_etfs      = st.session_state.active_etfs
-spy_ann          = st.session_state.spy_ann
-fee_bps          = st.session_state.fee_bps
-optimal_lookback = st.session_state.optimal_lookback
+result         = st.session_state.result
+signal         = st.session_state.signal
+df             = st.session_state.df_ready
+tbill_rate     = st.session_state.tbill_rate
+active_etfs    = st.session_state.active_etfs
+spy_ann        = st.session_state.spy_ann
+fee_bps        = st.session_state.fee_bps
+current_option = st.session_state.option
+next_date      = get_next_trading_day()
 
-next_date = get_next_trading_day()
 st.divider()
 
-# ── Signal banner ─────────────────────────────────────────────────────────────
+# ── Signal banner (shared) ────────────────────────────────────────────────────
 show_signal_banner(
     etf=signal["etf"],
     hold_period=signal["hold_period"],
@@ -250,30 +333,34 @@ show_signal_banner(
 
 st.divider()
 
-# ── ETF breakdown table ───────────────────────────────────────────────────────
-show_etf_scores_table(
-    scores=signal["scores"],
-    arima_results=arima_results,
-    run_scores=run_scores,
-    active_etfs=active_etfs,
-    hold_periods=HOLD_PERIODS,
-    fee_bps=fee_bps,
-)
+# ── Option-specific panels ────────────────────────────────────────────────────
+if current_option == "Option A — ARIMA Forecaster":
+    show_etf_scores_table(
+        scores=signal["scores"],
+        arima_results=st.session_state.arima_results,
+        run_scores=st.session_state.run_scores,
+        active_etfs=active_etfs,
+        hold_periods=HOLD_PERIODS,
+        fee_bps=fee_bps,
+    )
+    st.divider()
+    show_hold_period_rationale(
+        best_etf=signal["etf"],
+        best_h=signal["hold_period"],
+        scores=signal["scores"],
+        hold_periods=HOLD_PERIODS,
+        fee_bps=fee_bps,
+    )
+else:
+    show_momentum_scores_table(
+        momentum_scores=st.session_state.momentum_scores,
+        active_etfs=active_etfs,
+        current_etf=signal["etf"],
+    )
 
 st.divider()
 
-# ── Hold period rationale ─────────────────────────────────────────────────────
-show_hold_period_rationale(
-    best_etf=signal["etf"],
-    best_h=signal["hold_period"],
-    scores=signal["scores"],
-    hold_periods=HOLD_PERIODS,
-    fee_bps=fee_bps,
-)
-
-st.divider()
-
-# ── OOS Performance ───────────────────────────────────────────────────────────
+# ── OOS Metrics (shared) ──────────────────────────────────────────────────────
 st.subheader("📊 Out-of-Sample Performance Metrics")
 show_metrics_row(result, tbill_rate, spy_ann=spy_ann)
 
@@ -281,4 +368,7 @@ st.divider()
 
 # ── Audit trail ───────────────────────────────────────────────────────────────
 st.subheader("📋 Audit Trail — Last 20 Trading Days")
-show_audit_trail(result.get("audit_trail", []))
+if current_option == "Option A — ARIMA Forecaster":
+    show_audit_trail(result.get("audit_trail", []))
+else:
+    show_audit_trail_b(result.get("audit_trail", []))
