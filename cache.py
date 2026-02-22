@@ -9,7 +9,7 @@ import pickle
 from pathlib import Path
 
 CACHE_DIR     = Path("/tmp/p2_arima_cache")
-CACHE_VERSION = "v3"  # bumped: CASH trigger uses prior 2 days, not same day
+CACHE_VERSION = "v4"  # bumped: CASH logic verified + Z-score exit condition
 CACHE_DIR.mkdir(exist_ok=True)
 
 
@@ -29,6 +29,12 @@ def save_cache(key, payload):
             pickle.dump(payload, f)
     except Exception:
         pass
+
+
+def clear_all_cache():
+    """Wipe all cached results — call when strategy logic changes."""
+    for f in CACHE_DIR.glob("*.pkl"):
+        f.unlink(missing_ok=True)
 
 
 def load_cache(key):
