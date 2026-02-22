@@ -260,6 +260,7 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
     for etf in active_etfs:
         info = momentum_scores.get(etf, {})
         rows.append({
+            "Selected":         "⭐" if etf == current_etf else "",
             "ETF":              etf,
             f"{s_lbl} Ret":     info.get("ret_1m", 0.0),
             f"{s_lbl} Rank":    info.get("rank_1m", 0),
@@ -267,17 +268,24 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
             f"{m_lbl} Rank":    info.get("rank_3m", 0),
             f"{l_lbl} Ret":     info.get("ret_6m", 0.0),
             f"{l_lbl} Rank":    info.get("rank_6m", 0),
+            "Mom Rank":         info.get("momentum_rank", 0.0),
+            "RS/SPY":           info.get("rs_spy", 0.0),
+            "RS Rank":          info.get("rs_rank", 0),
+            "MA Slope":         info.get("ma_slope", 0.0),
+            "MA Rank":          info.get("ma_rank", 0),
             "Comp Rank":        info.get("rank_score", 0.0),
-            "Selected":         "⭐" if etf == current_etf else "",
         })
 
     rows = sorted(rows, key=lambda x: x["Comp Rank"])
 
-    ret_cols  = [f"{s_lbl} Ret",  f"{m_lbl} Ret",  f"{l_lbl} Ret"]
-    rank_cols = [f"{s_lbl} Rank", f"{m_lbl} Rank", f"{l_lbl} Rank"]
-    col_order = (["Selected", "ETF"] + 
-                 [c for pair in zip(ret_cols, rank_cols) for c in pair] + 
-                 ["Comp Rank"])
+    ret_cols   = [f"{s_lbl} Ret", f"{m_lbl} Ret", f"{l_lbl} Ret",
+                  "RS/SPY", "MA Slope"]
+    col_order  = ["Selected", "ETF",
+                  f"{s_lbl} Ret", f"{s_lbl} Rank",
+                  f"{m_lbl} Ret", f"{m_lbl} Rank",
+                  f"{l_lbl} Ret", f"{l_lbl} Rank",
+                  "Mom Rank", "RS/SPY", "RS Rank",
+                  "MA Slope", "MA Rank", "Comp Rank"]
 
     df_table = pd.DataFrame(rows).reset_index(drop=True)[col_order].reset_index(drop=True)
 
@@ -292,7 +300,8 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
             return ["background-color: rgba(0,200,150,0.15); font-weight:bold"] * len(row)
         return [""] * len(row)
 
-    fmt = {"Comp Rank": "{:.2f}"}
+    fmt = {"Comp Rank": "{:.2f}", "Mom Rank": "{:.2f}",
+           "RS Rank": "{:.2f}", "MA Rank": "{:.0f}"}
     for c in ret_cols:
         fmt[c] = "{:.2%}"
 
@@ -303,13 +312,14 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
         .format(fmt)
         .set_properties(**{"text-align": "center", "font-size": "13px"})
         .set_table_styles([
-            {"selector": "th", "props": [("font-size", "13px"),
+            {"selector": "th", "props": [("font-size", "12px"),
                                           ("font-weight", "bold"),
                                           ("text-align", "center")]},
-            {"selector": "td", "props": [("padding", "8px")]},
+            {"selector": "td", "props": [("padding", "6px")]},
         ])
     )
     st.dataframe(styled, use_container_width=True)
+    st.caption("**Comp Rank** = 50% Momentum Rank + 25% RS/SPY Rank + 25% MA Slope Rank · Lower = stronger signal")
 
 
 def show_methodology():
