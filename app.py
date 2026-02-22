@@ -278,7 +278,7 @@ if run_button:
         from option_b_momentum import (execute_backtest_b,
                                         compute_momentum_scores,
                                         select_top_etf,
-                                        _all_lookbacks_positive)
+                                        should_exit_cash)
 
         lb_short, lb_mid, lb_long = LB_MAP[lookback_months]
 
@@ -303,7 +303,7 @@ if run_button:
                 df, active_etfs, len(df), lb_short, lb_mid, lb_long,
             )
             best_etf, best_score = select_top_etf(mom_scores)
-            in_cash_live         = not _all_lookbacks_positive(mom_scores, best_etf)
+            in_cash_live         = not should_exit_cash(df, best_etf, len(df), mom_scores)
             signal = {
                 "etf":         "CASH" if in_cash_live else best_etf,
                 "hold_period": 1,
