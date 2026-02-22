@@ -289,15 +289,6 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
         ])
     )
     st.dataframe(styled, use_container_width=True)
-    if not audit_trail:
-        st.info("No audit trail data available.")
-        return
-
-    df = pd.DataFrame(audit_trail).tail(20)
-
-    # Convert In_Cash bool → readable string, drop if never triggered
-    if "In_Cash" in df.columns:
-        if df["In_Cash"].any():
             df["In_Cash"] = df["In_Cash"].map({True: "🛡️ CASH", False: ""})
         else:
             df = df.drop(columns=["In_Cash"])
