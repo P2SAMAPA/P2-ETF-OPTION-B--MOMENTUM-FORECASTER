@@ -283,7 +283,7 @@ if run_button:
                 "hold_period": 1,
                 "net_score":   best_score,
                 "in_cash":     in_cash_live,
-                "scores":      {etf: {1: mom_scores[etf]["score"]}
+                "scores":      {etf: {1: mom_scores[etf]["final_score"]}
                                  for etf in active_etfs},
             }
 
