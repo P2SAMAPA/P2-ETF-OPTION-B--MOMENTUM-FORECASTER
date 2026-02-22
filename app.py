@@ -85,7 +85,7 @@ with st.sidebar:
     if option == "Option B — Momentum Rotation":
         lookback_months = st.select_slider(
             "📅 Momentum Lookback",
-            options=[1, 3, 6, 9, 12],
+            options=[1, 3, 6, 9, 12, 15],
             value=6,
             format_func=lambda x: f"{x} month{'s' if x > 1 else ''}",
         )
@@ -326,6 +326,9 @@ if run_button:
             "spy_ann":          spy_ann,
             "fee_bps":          fee_bps,
             "option":           option,
+            "lb_short":         lb_short,
+            "lb_mid":           lb_mid,
+            "lb_long":          lb_long,
         })
 
 # ── Render (persists across reruns) ──────────────────────────────────────────
@@ -379,8 +382,8 @@ else:
         momentum_scores=st.session_state.momentum_scores,
         active_etfs=active_etfs,
         current_etf=signal["etf"],
-        lb_short_days=st.session_state.get("lb_short", 21),
-        lb_mid_days=st.session_state.get("lb_mid", 63),
+        lb_short_days=max(st.session_state.get("lb_short", 21), 3),
+        lb_mid_days=max(st.session_state.get("lb_mid", 63), 5),
         lb_long_days=st.session_state.get("lb_long", 126),
     )
 
