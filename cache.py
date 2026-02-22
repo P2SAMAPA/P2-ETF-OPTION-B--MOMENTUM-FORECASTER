@@ -9,7 +9,7 @@ import pickle
 from pathlib import Path
 
 CACHE_DIR     = Path("/tmp/p2_arima_cache")
-CACHE_VERSION = "v2"  # bumped: CASH overlay fix + trigger tightened to -10%
+CACHE_VERSION = "v3"  # bumped: CASH trigger uses prior 2 days, not same day
 CACHE_DIR.mkdir(exist_ok=True)
 
 
