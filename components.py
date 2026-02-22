@@ -164,7 +164,15 @@ def show_audit_trail(audit_trail: list):
         st.info("No audit trail data available.")
         return
 
-    df   = pd.DataFrame(audit_trail).tail(20)
+    df = pd.DataFrame(audit_trail).tail(20)
+
+    # Convert In_Cash bool → readable string, drop if never triggered
+    if "In_Cash" in df.columns:
+        if df["In_Cash"].any():
+            df["In_Cash"] = df["In_Cash"].map({True: "🛡️ CASH", False: ""})
+        else:
+            df = df.drop(columns=["In_Cash"])
+
     cols = [c for c in ["Date", "Signal", "Hold", "Net_Return", "In_Cash"]
             if c in df.columns]
     df   = df[cols]
