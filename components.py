@@ -208,7 +208,7 @@ def show_audit_trail_b(audit_trail: list):
         else:
             df = df.drop(columns=["In_Cash"])
 
-    cols = [c for c in ["Date", "Signal", "Score", "Net_Return", "In_Cash"]
+    cols = [c for c in ["Date", "Signal", "Rank Score", "Net_Return", "In_Cash"]
             if c in df.columns]
     df = df[cols]
 
@@ -216,10 +216,15 @@ def show_audit_trail_b(audit_trail: list):
         return ("color: #00c896; font-weight:bold" if val > 0
                 else "color: #ff4b4b; font-weight:bold")
 
+    fmt = {"Net_Return": "{:.2%}"}
+    if "Rank Score" in df.columns:
+        # Rank Score may be "—" for CASH rows so only format numeric
+        fmt["Rank Score"] = lambda x: f"{x:.2f}" if isinstance(x, float) else x
+
     styled = (
         df.style
         .map(_color_ret, subset=["Net_Return"])
-        .format({"Net_Return": "{:.2%}", "Score": "{:.4f}"})
+        .format(fmt)
         .set_properties(**{"font-size": "14px", "text-align": "center"})
         .set_table_styles([
             {"selector": "th", "props": [("font-size", "13px"),
@@ -233,30 +238,35 @@ def show_audit_trail_b(audit_trail: list):
 
 def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
                                 current_etf: str):
-    """Option B — per-ETF momentum breakdown: 1m, 3m, 6m and composite score."""
+    """Option B — per-ETF rank-based momentum breakdown."""
     st.subheader("📊 ETF Momentum Rankings — Option B")
-    st.caption("Composite score = equal-weight average of 1m / 3m / 6m trailing returns")
+    st.caption(
+        "Rank 1 = strongest ETF for that lookback · "
+        "Composite rank = average of 1m / 3m / 6m ranks · "
+        "Lowest composite rank wins"
+    )
 
     rows = []
     for etf in active_etfs:
         info = momentum_scores.get(etf, {})
         rows.append({
-            "ETF":       etf,
-            "1M Return": info.get("ret_1m", 0.0),
-            "3M Return": info.get("ret_3m", 0.0),
-            "6M Return": info.get("ret_6m", 0.0),
-            "Composite": info.get("score",  0.0),
-            "Rank":      "",
+            "ETF":        etf,
+            "1M Ret":     info.get("ret_1m", 0.0),
+            "1M Rank":    info.get("rank_1m", 0),
+            "3M Ret":     info.get("ret_3m", 0.0),
+            "3M Rank":    info.get("rank_3m", 0),
+            "6M Ret":     info.get("ret_6m", 0.0),
+            "6M Rank":    info.get("rank_6m", 0),
+            "Comp Rank":  info.get("rank_score", 0.0),
+            "Selected":   "⭐" if etf == current_etf else "",
         })
 
-    rows = sorted(rows, key=lambda x: x["Composite"], reverse=True)
-    for i, row in enumerate(rows):
-        row["Rank"] = f"#{i+1} {'⭐ SELECTED' if row['ETF'] == current_etf else ''}"
+    rows = sorted(rows, key=lambda x: x["Comp Rank"])
+    df_table = pd.DataFrame(rows)[["Selected", "ETF", "1M Ret", "1M Rank",
+                                    "3M Ret", "3M Rank", "6M Ret", "6M Rank",
+                                    "Comp Rank"]]
 
-    df_table = pd.DataFrame(rows)[["Rank", "ETF", "1M Return", "3M Return",
-                                    "6M Return", "Composite"]]
-
-    def _color_val(val):
+    def _color_ret(val):
         if isinstance(val, float):
             return ("color: #00c896; font-weight:bold" if val > 0
                     else "color: #ff4b4b" if val < 0 else "")
@@ -270,12 +280,12 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
     styled = (
         df_table.style
         .apply(_highlight_top, axis=1)
-        .map(_color_val, subset=["1M Return", "3M Return", "6M Return", "Composite"])
+        .map(_color_ret, subset=["1M Ret", "3M Ret", "6M Ret"])
         .format({
-            "1M Return": "{:.2%}",
-            "3M Return": "{:.2%}",
-            "6M Return": "{:.2%}",
-            "Composite": "{:.4f}",
+            "1M Ret":    "{:.2%}",
+            "3M Ret":    "{:.2%}",
+            "6M Ret":    "{:.2%}",
+            "Comp Rank": "{:.2f}",
         })
         .set_properties(**{"text-align": "center", "font-size": "13px"})
         .set_table_styles([
