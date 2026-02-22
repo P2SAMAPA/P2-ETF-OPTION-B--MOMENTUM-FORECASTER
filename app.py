@@ -379,6 +379,9 @@ else:
         momentum_scores=st.session_state.momentum_scores,
         active_etfs=active_etfs,
         current_etf=signal["etf"],
+        lb_short_days=st.session_state.get("lb_short", 21),
+        lb_mid_days=st.session_state.get("lb_mid", 63),
+        lb_long_days=st.session_state.get("lb_long", 126),
     )
 
 st.divider()
