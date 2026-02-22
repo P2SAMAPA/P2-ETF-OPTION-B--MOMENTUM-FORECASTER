@@ -75,7 +75,7 @@ def show_etf_scores_table(scores: dict, arima_results: dict,
             row[f"{h}d Score"] = f"{scores.get(etf, {}).get(h, 0.0):.4f}"
         rows.append(row)
 
-    df_table = pd.DataFrame(rows)
+    df_table = pd.DataFrame(rows).reset_index(drop=True)
 
     def _highlight_best(row):
         try:
@@ -280,7 +280,7 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
                  [c for pair in zip(ret_cols, rank_cols) for c in pair] + 
                  ["Comp Rank"])
 
-    df_table = pd.DataFrame(rows)[col_order]
+    df_table = pd.DataFrame(rows).reset_index(drop=True)[col_order].reset_index(drop=True)
 
     def _color_ret(val):
         if isinstance(val, float):
