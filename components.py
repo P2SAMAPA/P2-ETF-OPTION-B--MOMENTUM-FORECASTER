@@ -31,7 +31,7 @@ def show_signal_banner(etf: str, hold_period: int, next_date,
     else:
         bg    = "linear-gradient(135deg, #00d1b2 0%, #00a896 100%)"
         label = f"🎯 {next_date} → {etf}"
-        sub   = f"Hold {hold_period}d · Net Score: {net_score:.4f}"
+        sub   = f"Next Trading Day Signal"
         st.markdown(f"""
     <div style="background:{bg}; padding:25px; border-radius:15px;
                 text-align:center; box-shadow:0 8px 16px rgba(0,0,0,0.3); margin:16px 0;">
@@ -310,3 +310,93 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
         ])
     )
     st.dataframe(styled, use_container_width=True)
+
+
+def show_methodology():
+    """Option B strategy methodology section."""
+    st.divider()
+    st.subheader("📖 Strategy Methodology — Option B")
+
+    with st.expander("How does this strategy work?", expanded=False):
+        st.markdown("""
+### Cross-Sectional Momentum Rotation
+
+This strategy answers one question every trading day: **which ETF has the strongest 
+relative momentum right now?** It then holds that ETF until a better opportunity 
+or a drawdown protection event occurs.
+
+---
+
+#### Step 1 — Daily Momentum Ranking
+
+For each ETF (TLT, TBT, VNQ, SLV, GLD), three trailing return windows are computed:
+- **Short window** (e.g. 2m for a 6m lookback)
+- **Mid window** (e.g. 4m)
+- **Long window** = the full lookback period you select in the sidebar
+
+Each ETF is then **ranked 1 to 5** within each window (1 = highest return = best).
+The **Composite Rank** is the average of these three individual ranks.
+The ETF with the **lowest composite rank** (closest to 1) is selected.
+
+This rank-based approach is intentionally relative — it asks *"which ETF is 
+strongest vs its peers?"* not *"which ETF is up the most in absolute terms?"*
+This prevents a single runaway ETF from dominating purely due to an extreme move.
+
+---
+
+#### Step 2 — Why only 3 to 18 months lookback?
+
+- **Less than 3 months**: Too noisy. Daily return noise dominates over genuine 
+  trend signal. Short-term reversals are common and would cause excessive switching.
+- **More than 18 months**: Too slow. A regime change (e.g. rates rising, gold 
+  falling out of favour) takes many months to show up in the signal — by which 
+  time the strategy has already suffered significant losses staying in the wrong ETF.
+- **Sweet spot 6–12 months**: Academic research on cross-sectional momentum 
+  (Jegadeesh & Titman 1993, and subsequent ETF studies) consistently finds 
+  6–12 month formation periods produce the strongest risk-adjusted returns.
+  The 9m lookback tends to offer the best Sharpe in this ETF universe.
+
+---
+
+#### Step 3 — Drawdown Protection (Stop Loss)
+
+A **2-day compound drawdown** trigger protects against sudden crashes:
+
+> If (1 + Day₋₂ return) × (1 + Day₋₁ return) − 1 ≤ −10%, move to **CASH**
+
+Key design choices:
+- **2-day window**: A single bad day can be noise (e.g. flash crash that reverses). 
+  Two consecutive bad days suggest a genuine adverse move.
+- **−10% threshold**: Chosen to catch meaningful drawdowns (like Jan 30, 2026's 
+  −28.5% SLV crash) without triggering on routine daily volatility.
+- **CASH earns T-bill rate** while protection is active — not zero.
+- The check happens at the **start of the trading day** using prior days' data, 
+  so the signal is always actionable before markets open.
+
+---
+
+#### Step 4 — Re-entry Condition (Z-score ≥ 1.2σ)
+
+Once in CASH, the strategy does **not** simply re-enter after a fixed number of days.
+Instead it waits for a statistically meaningful recovery signal:
+
+> Re-enter when the top-ranked ETF's most recent daily return is ≥ **1.2 standard 
+> deviations above its 63-day rolling mean**
+
+Why Z-score and not just "two up days"?
+- After a crash, prices often bounce weakly before rolling over again (dead cat bounce).
+- A Z-score ≥ 1.2σ means the recent return is in the **top ~12% of that ETF's 
+  own distribution** — not just slightly positive, but genuinely above-trend.
+- The 63-day window (≈ 3 months) is long enough to capture the post-crash 
+  distribution including the crash itself, making the bar appropriately high.
+- 1.2σ is a deliberate balance: strict enough to avoid re-entering on weak bounces,
+  lenient enough not to miss the early stages of a genuine recovery.
+
+---
+
+#### Transaction Costs
+
+Fees are charged **only on switches** between ETFs, not on hold days.
+At 10 bps per switch, and with typical holding periods of several weeks,
+the annual fee drag is modest — usually 20–50 bps/year depending on regime.
+        """)
