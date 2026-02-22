@@ -270,9 +270,21 @@ if run_button:
         })
 
     # ═══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════
     # OPTION B — MOMENTUM
     # ═══════════════════════════════════════════════════════════════
     else:
+        # Lookback windows scale with user slider
+        LB_MAP = {
+            1:  (5,   10,  21),   # 1w,  2w,  1m
+            3:  (21,  42,  63),   # 1m,  2m,  3m
+            6:  (42,  84,  126),  # 2m,  4m,  6m
+            9:  (63,  126, 189),  # 3m,  6m,  9m
+            12: (126, 189, 252),  # 6m,  9m,  12m
+            15: (126, 252, 315),  # 6m,  12m, 15m
+        }
+        lb_short, lb_mid, lb_long = LB_MAP.get(lookback_months, (42, 84, 126))
+
         cache_key   = make_cache_key(last_date_str, 2008, fee_bps,
                                       "80/10/10_B", lookback_months)
         cached_data = load_cache(cache_key)
@@ -282,20 +294,14 @@ if run_button:
             st.success("⚡ Results from cache.")
         else:
             with st.spinner("⏳ Running cross-sectional momentum backtest on OOS..."):
-                # Convert months to trading days
-                lb_days = lookback_months * 21
                 result = execute_backtest_b(
                     df=df, active_etfs=active_etfs,
-                    test_slice=test_slice, lookback=lb_days,
+                    test_slice=test_slice, lookback=lb_long,
                     fee_bps=fee_bps, tbill_rate=tbill_rate,
                 )
             save_cache(cache_key, {"result": result})
 
         with st.spinner("🔮 Computing next-day momentum signal..."):
-            lb_days  = lookback_months * 21
-            lb_long  = lb_days
-            lb_mid   = max(lb_days // 2, 5)
-            lb_short = max(lb_days // 4, 3)
             mom_scores           = compute_momentum_scores(
                 df, active_etfs, len(df), lb_short, lb_mid, lb_long,
             )
@@ -330,74 +336,4 @@ if run_button:
             "lb_mid":           lb_mid,
             "lb_long":          lb_long,
         })
-
 # ── Render (persists across reruns) ──────────────────────────────────────────
-if not st.session_state.output_ready:
-    st.info("👈 Configure parameters and click **🚀 Run**.")
-    st.stop()
-
-result         = st.session_state.result
-signal         = st.session_state.signal
-df             = st.session_state.df_ready
-tbill_rate     = st.session_state.tbill_rate
-active_etfs    = st.session_state.active_etfs
-spy_ann        = st.session_state.spy_ann
-fee_bps        = st.session_state.fee_bps
-current_option = st.session_state.option
-next_date      = get_next_trading_day()
-
-st.divider()
-
-# ── Signal banner (shared) ────────────────────────────────────────────────────
-show_signal_banner(
-    etf=signal["etf"],
-    hold_period=signal["hold_period"],
-    next_date=next_date,
-    net_score=signal["net_score"],
-    in_cash=signal["in_cash"],
-)
-
-st.divider()
-
-# ── Option-specific panels ────────────────────────────────────────────────────
-if current_option == "Option A — ARIMA Forecaster":
-    show_etf_scores_table(
-        scores=signal["scores"],
-        arima_results=st.session_state.arima_results,
-        run_scores=st.session_state.run_scores,
-        active_etfs=active_etfs,
-        hold_periods=HOLD_PERIODS,
-        fee_bps=fee_bps,
-    )
-    st.divider()
-    show_hold_period_rationale(
-        best_etf=signal["etf"],
-        best_h=signal["hold_period"],
-        scores=signal["scores"],
-        hold_periods=HOLD_PERIODS,
-        fee_bps=fee_bps,
-    )
-else:
-    show_momentum_scores_table(
-        momentum_scores=st.session_state.momentum_scores,
-        active_etfs=active_etfs,
-        current_etf=signal["etf"],
-        lb_short_days=max(st.session_state.get("lb_short", 21), 3),
-        lb_mid_days=max(st.session_state.get("lb_mid", 63), 5),
-        lb_long_days=st.session_state.get("lb_long", 126),
-    )
-
-st.divider()
-
-# ── OOS Metrics (shared) ──────────────────────────────────────────────────────
-st.subheader("📊 Out-of-Sample Performance Metrics")
-show_metrics_row(result, tbill_rate, spy_ann=spy_ann)
-
-st.divider()
-
-# ── Audit trail ───────────────────────────────────────────────────────────────
-st.subheader("📋 Audit Trail — Last 20 Trading Days")
-if current_option == "Option A — ARIMA Forecaster":
-    show_audit_trail(result.get("audit_trail", []))
-else:
-    show_audit_trail_b(result.get("audit_trail", []))
