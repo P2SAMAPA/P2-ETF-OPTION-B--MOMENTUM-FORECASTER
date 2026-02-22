@@ -43,7 +43,10 @@ def _trailing_return(prices: pd.Series, lookback: int) -> float:
 # ── Core rank-based scoring ───────────────────────────────────────────────────
 
 def compute_momentum_scores(df: pd.DataFrame, active_etfs: list,
-                             as_of_idx: int) -> dict:
+                             as_of_idx: int,
+                             lb_short: int = LOOKBACK_1M,
+                             lb_mid: int   = LOOKBACK_3M,
+                             lb_long: int  = LOOKBACK_6M) -> dict:
     """
     Compute rank-based composite momentum score for each ETF.
 
@@ -68,52 +71,49 @@ def compute_momentum_scores(df: pd.DataFrame, active_etfs: list,
     """
     price_slice = df.iloc[:as_of_idx]
     n_etfs      = len(active_etfs)
+    lookbacks   = [lb_short, lb_mid, lb_long]
 
     # Compute raw trailing returns per lookback
-    rets = {lb: {} for lb in [LOOKBACK_1M, LOOKBACK_3M, LOOKBACK_6M]}
+    rets = {lb: {} for lb in lookbacks}
     for etf in active_etfs:
         if etf not in df.columns:
-            for lb in rets:
+            for lb in lookbacks:
                 rets[lb][etf] = np.nan
             continue
-        for lb in rets:
+        for lb in lookbacks:
             rets[lb][etf] = _trailing_return(price_slice[etf], lb)
 
     # Rank per lookback (rank 1 = highest return = best)
-    # NaN gets worst rank
-    ranks = {lb: {} for lb in [LOOKBACK_1M, LOOKBACK_3M, LOOKBACK_6M]}
-    for lb in [LOOKBACK_1M, LOOKBACK_3M, LOOKBACK_6M]:
-        lb_rets   = rets[lb]
-        # Sort descending by return, NaN goes last
+    ranks = {lb: {} for lb in lookbacks}
+    for lb in lookbacks:
+        lb_rets     = rets[lb]
         sorted_etfs = sorted(
             active_etfs,
             key=lambda e: lb_rets.get(e, np.nan)
-                if not np.isnan(lb_rets.get(e, np.nan)) else -np.inf,
+                if not np.isnan(lb_rets.get(e, np.nan) or np.nan) else -np.inf,
             reverse=True,
         )
         for rank, etf in enumerate(sorted_etfs, start=1):
             ranks[lb][etf] = rank
 
-    # Composite rank = average rank across 3 lookbacks (lower = better)
+    # Composite rank = average rank across 3 lookbacks
     scores = {}
     for etf in active_etfs:
-        r1 = ranks[LOOKBACK_1M].get(etf, n_etfs)
-        r3 = ranks[LOOKBACK_3M].get(etf, n_etfs)
-        r6 = ranks[LOOKBACK_6M].get(etf, n_etfs)
-        composite_rank = (r1 + r3 + r6) / 3.0
-
-        # Invert for display: higher = better (max possible rank = n_etfs)
-        final_score = n_etfs + 1 - composite_rank
+        r_short = ranks[lb_short].get(etf, n_etfs)
+        r_mid   = ranks[lb_mid].get(etf, n_etfs)
+        r_long  = ranks[lb_long].get(etf, n_etfs)
+        composite_rank = (r_short + r_mid + r_long) / 3.0
+        final_score    = n_etfs + 1 - composite_rank
 
         scores[etf] = {
             "rank_score":  composite_rank,
             "final_score": final_score,
-            "ret_1m":      rets[LOOKBACK_1M].get(etf, 0.0) or 0.0,
-            "ret_3m":      rets[LOOKBACK_3M].get(etf, 0.0) or 0.0,
-            "ret_6m":      rets[LOOKBACK_6M].get(etf, 0.0) or 0.0,
-            "rank_1m":     r1,
-            "rank_3m":     r3,
-            "rank_6m":     r6,
+            "ret_1m":      rets[lb_short].get(etf, 0.0) or 0.0,
+            "ret_3m":      rets[lb_mid].get(etf, 0.0)   or 0.0,
+            "ret_6m":      rets[lb_long].get(etf, 0.0)  or 0.0,
+            "rank_1m":     r_short,
+            "rank_3m":     r_mid,
+            "rank_6m":     r_long,
         }
 
     return scores
@@ -150,17 +150,19 @@ def execute_backtest_b(df: pd.DataFrame,
                        fee_bps: int,
                        tbill_rate: float) -> dict:
     """
-    Walk-forward backtest for Option B (rank-based cross-sectional momentum).
-
-    - Re-ranks ETFs daily using rank-based composite score
-    - Fee only charged when ETF switches
-    - CASH overlay: enter on 2-day <= -15%
-                    exit only when top ETF is positive across ALL lookbacks
+    Walk-forward backtest for Option B.
+    lookback = primary lookback in trading days (user-selected months * 21).
+    Also uses lookback//2 and lookback//4 as shorter windows for composite ranking.
     """
     daily_tbill  = tbill_rate / 252
     fee          = fee_bps / 10000
     today        = datetime.now().date()
     test_indices = list(range(*test_slice.indices(len(df))))
+
+    # Derive three lookback windows from user selection
+    lb_long  = lookback
+    lb_mid   = max(lookback // 2, 5)
+    lb_short = max(lookback // 4, 3)
 
     if not test_indices:
         return {}
@@ -177,7 +179,9 @@ def execute_backtest_b(df: pd.DataFrame,
         trade_date = df.index[idx]
 
         # ── Daily rank-based momentum scoring ─────────────────────────────────
-        mom_scores           = compute_momentum_scores(df, active_etfs, idx)
+        mom_scores           = compute_momentum_scores(
+            df, active_etfs, idx, lb_short, lb_mid, lb_long,
+        )
         best_etf, best_score = select_top_etf(mom_scores)
 
         if best_etf is None:
