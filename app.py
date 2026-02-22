@@ -33,12 +33,12 @@ HOLD_PERIODS = [1, 3, 5]
 # Lookback windows — always contained within the selected period
 # Long = selected period, Mid = 2/3 of it, Short = 1/3 of it
 LB_MAP = {
-    1:  (5,   10,  21),   # ~1w,  ~2w,  1m
     3:  (21,  42,  63),   # 1m,   2m,   3m
     6:  (42,  84,  126),  # 2m,   4m,   6m
     9:  (63,  126, 189),  # 3m,   6m,   9m
     12: (84,  168, 252),  # 4m,   8m,   12m
     15: (105, 210, 315),  # 5m,   10m,  15m
+    18: (126, 252, 378),  # 6m,   12m,  18m
 }
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -89,9 +89,9 @@ with st.sidebar:
         start_yr        = None
         lookback_months = st.select_slider(
             "📅 Momentum Lookback",
-            options=[1, 3, 6, 9, 12, 15],
+            options=[3, 6, 9, 12, 15, 18],
             value=6,
-            format_func=lambda x: f"{x} month{'s' if x > 1 else ''}",
+            format_func=lambda x: f"{x} months",
         )
         lb_short, lb_mid, lb_long = LB_MAP[lookback_months]
         st.caption(f"📊 Windows: **{lb_short//21}m** · **{lb_mid//21}m** · **{lookback_months}m**")
