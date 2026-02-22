@@ -237,34 +237,50 @@ def show_audit_trail_b(audit_trail: list):
 
 
 def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
-                                current_etf: str):
-    """Option B — per-ETF rank-based momentum breakdown."""
+                                current_etf: str,
+                                lb_short_days: int = 21,
+                                lb_mid_days:   int = 63,
+                                lb_long_days:  int = 126):
+    """Option B — per-ETF rank-based momentum breakdown with correct lookback labels."""
+
+    def _days_to_label(days):
+        months = round(days / 21)
+        return f"{months}M"
+
+    s_lbl = _days_to_label(lb_short_days)
+    m_lbl = _days_to_label(lb_mid_days)
+    l_lbl = _days_to_label(lb_long_days)
+
     st.subheader("📊 ETF Momentum Rankings — Option B")
     st.caption(
-        "Rank 1 = strongest ETF for that lookback · "
-        "Composite rank = average of 1m / 3m / 6m ranks · "
-        "Lowest composite rank wins"
+        f"Lookback windows: **{s_lbl}** (short) · **{m_lbl}** (mid) · **{l_lbl}** (long) · "
+        "Rank 1 = strongest · Lowest composite rank wins"
     )
 
     rows = []
     for etf in active_etfs:
         info = momentum_scores.get(etf, {})
         rows.append({
-            "ETF":        etf,
-            "1M Ret":     info.get("ret_1m", 0.0),
-            "1M Rank":    info.get("rank_1m", 0),
-            "3M Ret":     info.get("ret_3m", 0.0),
-            "3M Rank":    info.get("rank_3m", 0),
-            "6M Ret":     info.get("ret_6m", 0.0),
-            "6M Rank":    info.get("rank_6m", 0),
-            "Comp Rank":  info.get("rank_score", 0.0),
-            "Selected":   "⭐" if etf == current_etf else "",
+            "ETF":              etf,
+            f"{s_lbl} Ret":     info.get("ret_1m", 0.0),
+            f"{s_lbl} Rank":    info.get("rank_1m", 0),
+            f"{m_lbl} Ret":     info.get("ret_3m", 0.0),
+            f"{m_lbl} Rank":    info.get("rank_3m", 0),
+            f"{l_lbl} Ret":     info.get("ret_6m", 0.0),
+            f"{l_lbl} Rank":    info.get("rank_6m", 0),
+            "Comp Rank":        info.get("rank_score", 0.0),
+            "Selected":         "⭐" if etf == current_etf else "",
         })
 
     rows = sorted(rows, key=lambda x: x["Comp Rank"])
-    df_table = pd.DataFrame(rows)[["Selected", "ETF", "1M Ret", "1M Rank",
-                                    "3M Ret", "3M Rank", "6M Ret", "6M Rank",
-                                    "Comp Rank"]]
+
+    ret_cols  = [f"{s_lbl} Ret",  f"{m_lbl} Ret",  f"{l_lbl} Ret"]
+    rank_cols = [f"{s_lbl} Rank", f"{m_lbl} Rank", f"{l_lbl} Rank"]
+    col_order = (["Selected", "ETF"] + 
+                 [c for pair in zip(ret_cols, rank_cols) for c in pair] + 
+                 ["Comp Rank"])
+
+    df_table = pd.DataFrame(rows)[col_order]
 
     def _color_ret(val):
         if isinstance(val, float):
@@ -277,16 +293,15 @@ def show_momentum_scores_table(momentum_scores: dict, active_etfs: list,
             return ["background-color: rgba(0,200,150,0.15); font-weight:bold"] * len(row)
         return [""] * len(row)
 
+    fmt = {"Comp Rank": "{:.2f}"}
+    for c in ret_cols:
+        fmt[c] = "{:.2%}"
+
     styled = (
         df_table.style
         .apply(_highlight_top, axis=1)
-        .map(_color_ret, subset=["1M Ret", "3M Ret", "6M Ret"])
-        .format({
-            "1M Ret":    "{:.2%}",
-            "3M Ret":    "{:.2%}",
-            "6M Ret":    "{:.2%}",
-            "Comp Rank": "{:.2f}",
-        })
+        .map(_color_ret, subset=ret_cols)
+        .format(fmt)
         .set_properties(**{"text-align": "center", "font-size": "13px"})
         .set_table_styles([
             {"selector": "th", "props": [("font-size", "13px"),
