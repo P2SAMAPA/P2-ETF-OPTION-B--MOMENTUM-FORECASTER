@@ -22,18 +22,17 @@ def show_availability_warnings(availability: dict):
 
 
 def show_signal_banner(etf: str, hold_period: int, next_date,
-                       net_score: float, in_cash: bool):
+                       net_score: float, in_cash: bool,
+                       next_etf: str = None):
     is_cash = in_cash or etf == "CASH"
-    bg = ("linear-gradient(135deg, #2d3436 0%, #1a1a2e 100%)" if is_cash
-          else "linear-gradient(135deg, #00d1b2 0%, #00a896 100%)")
+
     if is_cash:
-        label = "⚠️ DRAWDOWN PROTECTION ACTIVE — CASH"
-        sub   = "2-day cumulative return triggered CASH overlay"
+        st.warning(f"🛡️ **DRAWDOWN PROTECTION ACTIVE** — Staying in CASH on {next_date}")
     else:
+        bg    = "linear-gradient(135deg, #00d1b2 0%, #00a896 100%)"
         label = f"🎯 {next_date} → {etf}"
         sub   = f"Hold {hold_period}d · Net Score: {net_score:.4f}"
-
-    st.markdown(f"""
+        st.markdown(f"""
     <div style="background:{bg}; padding:25px; border-radius:15px;
                 text-align:center; box-shadow:0 8px 16px rgba(0,0,0,0.3); margin:16px 0;">
       <div style="color:rgba(255,255,255,0.7); font-size:12px;
@@ -45,7 +44,7 @@ def show_signal_banner(etf: str, hold_period: int, next_date,
       </h1>
       <div style="color:rgba(255,255,255,0.75); font-size:14px;">{sub}</div>
     </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
 
 def show_etf_scores_table(scores: dict, arima_results: dict,
