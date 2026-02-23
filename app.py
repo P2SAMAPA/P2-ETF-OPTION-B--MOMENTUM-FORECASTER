@@ -184,11 +184,17 @@ if run_button:
     test_slice  = slice(t2, n)
     last_date_str = str(freshness.get("last_date", "unknown"))
 
-    st.info(
-        f"📅 **{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}**  "
-        f"· Train: **{t1}** · Val: **{t2-t1}** · OOS: **{n-t2}** days  "
-        f"· ETFs: **{', '.join(active_etfs)}**"
-    )
+    if option == "Option A — ARIMA Forecaster":
+        st.info(
+            f"📅 **{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}**  "
+            f"· Train: **{t1}** · Val: **{t2-t1}** · OOS: **{n-t2}** days  "
+            f"· ETFs: **{', '.join(active_etfs)}**"
+        )
+    else:
+        st.info(
+            f"📅 Full dataset: **{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}**  "
+            f"· OOS: **{n-t2}** days · ETFs: **{', '.join(active_etfs)}**"
+        )
 
     # ── SPY benchmark ─────────────────────────────────────────────────────────
     spy_ann = None
