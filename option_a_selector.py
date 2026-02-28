@@ -1,14 +1,11 @@
 """
-selector.py
+option_a_selector.py
 Daily ETF + hold period selection and walk-forward backtest.
-
 Scoring per ETF × hold_period:
-  net_score = arima_forecast[h] - fee + momentum_bonus + reversal_pressure_bonus
-
+net_score = arima_forecast[h] - fee + momentum_bonus + reversal_pressure_bonus
 CASH overlay: 2-day cumulative return <= -15% triggers CASH.
 Exit CASH: ARIMA direction turns positive on best ETF.
 """
-
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -19,21 +16,18 @@ MOMENTUM_WINDOW       = 5
 MOMENTUM_WEIGHT       = 0.3
 PRESSURE_WEIGHT       = 0.2
 
-
 def _rolling_momentum(returns: np.ndarray, window: int = MOMENTUM_WINDOW) -> float:
     if len(returns) < window:
         return 0.0
     return float(np.sum(returns[-window:]))
 
-
 def score_etf_hold(arima_forecast: float, hold_period: int, fee_bps: int,
                    momentum: float, pressure: float, direction: int) -> float:
-    fee        = fee_bps / 10000
-    net_arima  = arima_forecast - fee
-    mom_bonus  = MOMENTUM_WEIGHT * momentum if np.sign(momentum) == direction else 0.0
+    fee         = fee_bps / 10000
+    net_arima   = arima_forecast - fee
+    mom_bonus   = MOMENTUM_WEIGHT * momentum if np.sign(momentum) == direction else 0.0
     press_bonus = PRESSURE_WEIGHT * pressure if direction == 1 else 0.0
     return net_arima + mom_bonus + press_bonus
-
 
 def select_signal(arima_results: dict, run_scores: dict,
                   df: pd.DataFrame, active_etfs: list,
@@ -73,14 +67,14 @@ def select_signal(arima_results: dict, run_scores: dict,
         "in_cash":         False,
     }
 
-
 def execute_backtest(df: pd.DataFrame, active_etfs: list,
                      test_slice: slice, run_stats: dict,
                      lookback: int, fee_bps: int,
                      tbill_rate: float,
                      hold_periods: list = HOLD_PERIODS) -> dict:
+    # ✅ FIXED: Updated import to match renamed file
     from option_a_arima_forecaster import run_all_etfs
-    from run_analysis import get_reversal_scores
+    from option_a_run_analysis import get_reversal_scores
 
     daily_tbill    = tbill_rate / 252
     fee            = fee_bps / 10000
@@ -104,11 +98,11 @@ def execute_backtest(df: pd.DataFrame, active_etfs: list,
     for step, idx in enumerate(test_indices):
         trade_date = df.index[idx]
 
-        # ── Re-evaluate when hold expires ─────────────────────────────────────
+        # ── Re-evaluate when hold expires  ─────────────────────────────────────
         if hold_remaining <= 0:
             arima_res  = run_all_etfs(df.iloc[:idx], active_etfs, lookback, hold_periods)
             rev_scores = get_reversal_scores(df, active_etfs, run_stats, idx)
-            signal     = select_signal(arima_res, rev_scores, df,
+            signal      = select_signal(arima_res, rev_scores, df,
                                        active_etfs, idx, fee_bps, hold_periods)
             current_etf    = signal["etf"]
             current_h      = signal["hold_period"]
@@ -123,7 +117,7 @@ def execute_backtest(df: pd.DataFrame, active_etfs: list,
         if np.isnan(realized):
             realized = 0.0
 
-        # ── CASH drawdown check ───────────────────────────────────────────────
+        #  ── CASH drawdown check ───────────────────────────────────────────────
         recent_rets.append(realized)
         if len(recent_rets) > 2:
             recent_rets.pop(0)
@@ -169,16 +163,13 @@ def execute_backtest(df: pd.DataFrame, active_etfs: list,
         "current_h":   current_h,
     }
 
-
 def st_progress_placeholder():
     """Dummy — progress shown via app.py spinner."""
     return None
 
-
 def _compute_metrics(strat_rets, tbill_rate, date_index=None):
     if len(strat_rets) == 0:
         return {}
-
     cum     = np.cumprod(1 + strat_rets)
     n       = len(strat_rets)
     ann_ret = float(cum[-1] ** (252 / n) - 1)
@@ -204,7 +195,6 @@ def _compute_metrics(strat_rets, tbill_rate, date_index=None):
         "max_daily_date": worst_date,
         "cum_max":        cum_max,
     }
-
 
 def compute_benchmark_metrics(returns, tbill_rate):
     return _compute_metrics(np.array(returns, dtype=np.float64), tbill_rate)
