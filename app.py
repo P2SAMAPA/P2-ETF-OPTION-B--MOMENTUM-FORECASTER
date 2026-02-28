@@ -7,7 +7,7 @@ Each option's modules are imported ONLY when that option is selected.
 import os
 import streamlit as st
 import pandas as pd
-import numpy as pd
+import numpy as np
 
 # ── Shared modules only ───────────────────────────────────────────────────────
 from loader import (load_dataset, check_data_freshness, prepare_data,
