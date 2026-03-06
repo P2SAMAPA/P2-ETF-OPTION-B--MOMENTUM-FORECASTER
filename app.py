@@ -32,12 +32,12 @@ HOLD_PERIODS = [1, 3, 5]
 # Lookback windows — always contained within the selected period
 # Long = selected period, Mid = 2/3 of it, Short = 1/3 of it
 LB_MAP = {
-    3: (21, 42, 63),    # 1m,  2m,  3m
-    6: (42, 84, 126),   # 2m,  4m,  6m
-    9: (63, 126, 189),  # 3m,  6m,  9m
-    12: (84, 168, 252), # 4m,  8m,  12m
-    15: (105, 210, 315),# 5m,  10m, 15m
-    18: (126, 252, 378),# 6m,  12m, 18m
+    3:  (21,  42,  63),
+    6:  (42,  84,  126),
+    9:  (63,  126, 189),
+    12: (84,  168, 252),
+    15: (105, 210, 315),
+    18: (126, 252, 378),
 }
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -159,9 +159,9 @@ for etf in ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]:
     if etf in df_raw.columns:
         valid_rows = df_raw[etf].dropna().shape[0]
         total_rows = df_raw.shape[0]
-        nan_count = df_raw[etf].isna().sum()
+        nan_count  = df_raw[etf].isna().sum()
         first_date = df_raw[etf].dropna().index[0].strftime("%Y-%m-%d") if valid_rows > 0 else "N/A"
-        last_date = df_raw[etf].dropna().index[-1].strftime("%Y-%m-%d") if valid_rows > 0 else "N/A"
+        last_date  = df_raw[etf].dropna().index[-1].strftime("%Y-%m-%d") if valid_rows > 0 else "N/A"
         st.write(f"**{etf}:** {valid_rows}/{total_rows} valid rows | {nan_count} NaN | {first_date} → {last_date}")
     else:
         st.write(f"**{etf}:** ❌ Column not found in dataset")
@@ -187,6 +187,7 @@ with st.sidebar:
 if run_button:
     st.session_state.output_ready = False
     st.session_state.option = option
+
     # ── Shared data prep ──────────────────────────────────────────────────────
     effective_start = start_yr if option == "Option A — ARIMA Forecaster" else 2008
     with st.spinner("🔧 Preparing data..."):
@@ -202,7 +203,7 @@ if run_button:
     t1 = int(n * 0.80)
     t2 = int(n * 0.90)
     train_slice = slice(0, t1)
-    test_slice = slice(t2, n)
+    test_slice  = slice(t2, n)
     last_date_str = str(freshness.get("last_date", "unknown"))
 
     if option == "Option A — ARIMA Forecaster":
@@ -237,7 +238,7 @@ if run_button:
                                             get_reversal_scores)
         from option_a_selector import (execute_backtest, select_signal)
 
-        lb_key = make_lb_cache_key(last_date_str, start_yr, "80/10/10_A")
+        lb_key    = make_lb_cache_key(last_date_str, start_yr, "80/10/10_A")
         lb_cached = load_cache(lb_key)
 
         if lb_cached is not None:
@@ -251,8 +252,8 @@ if run_button:
             save_cache(lb_key, {"lookback": optimal_lookback})
             st.success(f"📐 Optimal lookback: **{optimal_lookback}d**")
 
-        cache_key = make_cache_key(last_date_str, start_yr, fee_bps,
-                                   "80/10/10_A", optimal_lookback)
+        cache_key   = make_cache_key(last_date_str, start_yr, fee_bps,
+                                     "80/10/10_A", optimal_lookback)
         cached_data = load_cache(cache_key)
 
         if cached_data is not None:
@@ -272,30 +273,30 @@ if run_button:
 
         with st.spinner("🔮 Computing next-day ARIMA signal..."):
             run_stats_live = compute_all_run_stats(df, active_etfs, slice(0, len(df)))
-            arima_results = run_all_etfs(df, active_etfs, optimal_lookback, HOLD_PERIODS)
-            rev_scores = get_reversal_scores(df, active_etfs, run_stats_live, len(df))
-            signal = select_signal(arima_results, rev_scores, df,
-                                    active_etfs, len(df), fee_bps, HOLD_PERIODS)
+            arima_results  = run_all_etfs(df, active_etfs, optimal_lookback, HOLD_PERIODS)
+            rev_scores     = get_reversal_scores(df, active_etfs, run_stats_live, len(df))
+            signal         = select_signal(arima_results, rev_scores, df,
+                                           active_etfs, len(df), fee_bps, HOLD_PERIODS)
 
         st.session_state.update({
-            "output_ready": True,
-            "result": result,
-            "arima_results": arima_results,
-            "run_scores": rev_scores,
-            "signal": signal,
+            "output_ready":    True,
+            "result":          result,
+            "arima_results":   arima_results,
+            "run_scores":      rev_scores,
+            "signal":          signal,
             "momentum_scores": None,
-            "test_slice": test_slice,
+            "test_slice":      test_slice,
             "optimal_lookback": optimal_lookback,
-            "df_ready": df,
-            "tbill_rate": tbill_rate,
-            "active_etfs": active_etfs,
-            "availability": availability,
-            "spy_ann": spy_ann,
-            "fee_bps": fee_bps,
-            "option": option,
-            "lb_short": None,
-            "lb_mid": None,
-            "lb_long": None,
+            "df_ready":        df,
+            "tbill_rate":      tbill_rate,
+            "active_etfs":     active_etfs,
+            "availability":    availability,
+            "spy_ann":         spy_ann,
+            "fee_bps":         fee_bps,
+            "option":          option,
+            "lb_short":        None,
+            "lb_mid":          None,
+            "lb_long":         None,
         })
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -310,8 +311,8 @@ if run_button:
 
         lb_short, lb_mid, lb_long = LB_MAP[lookback_months]
 
-        cache_key = make_cache_key(last_date_str, 2008, fee_bps,
-                                   "80/10/10_B", lookback_months)
+        cache_key   = make_cache_key(last_date_str, 2008, fee_bps,
+                                     "80/10/10_B", lookback_months)
         cached_data = load_cache(cache_key)
 
         if cached_data is not None:
@@ -327,46 +328,67 @@ if run_button:
             save_cache(cache_key, {"result": result})
 
         with st.spinner("🔮 Computing next-day momentum signal..."):
-            mom_scores = compute_momentum_scores(
+            mom_scores       = compute_momentum_scores(
                 df, active_etfs, len(df), lb_short, lb_mid, lb_long,
             )
             best_etf, best_score = select_top_etf(mom_scores)
 
             backtest_ended_in_cash = result.get("ended_in_cash", False)
+
             if backtest_ended_in_cash:
-                in_cash_live = not should_exit_cash(df, best_etf, len(df), mom_scores)
+                # Build a 63-day rolling rank_score history for the live
+                # should_exit_cash() check. This mirrors exactly what
+                # execute_backtest_b tracks internally via rank_score_history.
+                # We replay the last min(63, len(df)) days so the Z-score
+                # baseline is consistent with the backtest logic.
+                rank_score_history = []
+                history_start = max(1, len(df) - 63)
+                for i in range(history_start, len(df) + 1):
+                    scores_i         = compute_momentum_scores(
+                        df, active_etfs, i, lb_short, lb_mid, lb_long,
+                    )
+                    top_etf_i, _     = select_top_etf(scores_i)
+                    if top_etf_i:
+                        rank_score_history.append(
+                            scores_i[top_etf_i]["rank_score"]
+                        )
+
+                # New 3-argument signature: (best_etf, momentum_scores, rank_score_history)
+                in_cash_live = not should_exit_cash(
+                    best_etf, mom_scores, rank_score_history
+                )
             else:
                 in_cash_live = False
 
             signal = {
-                "etf": "CASH" if in_cash_live else best_etf,
-                "next_etf": best_etf,
+                "etf":         "CASH" if in_cash_live else best_etf,
+                "next_etf":    best_etf,
                 "hold_period": 1,
-                "net_score": best_score,
-                "in_cash": in_cash_live,
-                "scores": {etf: {1: mom_scores[etf]["final_score"]}
-                          for etf in active_etfs},
+                "net_score":   best_score,
+                "in_cash":     in_cash_live,
+                "scores":      {etf: {1: mom_scores[etf]["final_score"]}
+                                for etf in active_etfs},
             }
 
         st.session_state.update({
-            "output_ready": True,
-            "result": result,
-            "arima_results": None,
-            "run_scores": None,
-            "signal": signal,
+            "output_ready":    True,
+            "result":          result,
+            "arima_results":   None,
+            "run_scores":      None,
+            "signal":          signal,
             "momentum_scores": mom_scores,
-            "test_slice": test_slice,
+            "test_slice":      test_slice,
             "optimal_lookback": None,
-            "df_ready": df,
-            "tbill_rate": tbill_rate,
-            "active_etfs": active_etfs,
-            "availability": availability,
-            "spy_ann": spy_ann,
-            "fee_bps": fee_bps,
-            "option": option,
-            "lb_short": lb_short,
-            "lb_mid": lb_mid,
-            "lb_long": lb_long,
+            "df_ready":        df,
+            "tbill_rate":      tbill_rate,
+            "active_etfs":     active_etfs,
+            "availability":    availability,
+            "spy_ann":         spy_ann,
+            "fee_bps":         fee_bps,
+            "option":          option,
+            "lb_short":        lb_short,
+            "lb_mid":          lb_mid,
+            "lb_long":         lb_long,
         })
 
 # ── Render (persists across reruns) ───────────────────────────────────────────
@@ -374,15 +396,15 @@ if not st.session_state.output_ready:
     st.info("👈 Configure parameters and click 🚀 Run.")
     st.stop()
 
-result = st.session_state.result
-signal = st.session_state.signal
-df = st.session_state.df_ready
-tbill_rate = st.session_state.tbill_rate
-active_etfs = st.session_state.active_etfs
-spy_ann = st.session_state.spy_ann
-fee_bps = st.session_state.fee_bps
+result       = st.session_state.result
+signal       = st.session_state.signal
+df           = st.session_state.df_ready
+tbill_rate   = st.session_state.tbill_rate
+active_etfs  = st.session_state.active_etfs
+spy_ann      = st.session_state.spy_ann
+fee_bps      = st.session_state.fee_bps
 current_option = st.session_state.option
-next_date = get_next_trading_day()
+next_date    = get_next_trading_day()
 
 st.divider()
 
