@@ -8,10 +8,10 @@ Composite rank score (all rank-based, lower = better):
   25% — MA slope rank              (50d MA / 200d MA ratio — trend acceleration)
 
 CASH overlay:
-  ENTER: 2-day compound return <= -10% (checked at start of day)
-  EXIT:  top-ranked ETF composite rank score Z-score >= 1.2 sigma vs its
-         own 63-day rolling distribution of rank scores (not raw returns).
-         Also requires the top ETF to have positive 1-month trailing return.
+  ENTER: 2-day compound return of held ETF <= -10%
+  EXIT:  top-ranked ETF has positive 1-month trailing return
+         AND its composite rank score is in the top half (rank_score <= median)
+         This is checked fresh each day while in CASH.
 """
 
 import numpy as np
@@ -19,7 +19,6 @@ import pandas as pd
 from datetime import datetime
 
 CASH_DRAWDOWN_TRIGGER = -0.10
-ZSCORE_EXIT_THRESHOLD = 1.2
 
 LOOKBACK_1M = 21
 LOOKBACK_3M = 63
@@ -139,32 +138,18 @@ def select_top_etf(momentum_scores: dict) -> tuple:
 
 # ── CASH re-entry ─────────────────────────────────────────────────────────────
 
-def compute_rank_score_zscore(rank_score_history: list) -> float:
-    """Z-score of latest rank_score vs rolling history. Higher = stronger momentum."""
-    if len(rank_score_history) < 10:
-        return 0.0
-    arr  = np.array(rank_score_history, dtype=np.float64)
-    mean = np.mean(arr[:-1])
-    std  = np.std(arr[:-1])
-    if std < 1e-9:
-        return 0.0
-    # rank_score: lower = better → invert so high Z = unusual strength
-    return float((mean - arr[-1]) / std)
-
-
-def should_exit_cash(best_etf: str,
-                     momentum_scores: dict,
-                     rank_score_history: list) -> bool:
+def should_exit_cash(best_etf: str, momentum_scores: dict) -> bool:
     """
-    Exit CASH when:
-      1. Rank score Z-score >= 1.2σ  (momentum unusually strong)
-      2. Top ETF 1-month return > 0  (trend is up)
+    Exit CASH when the top-ranked ETF satisfies BOTH:
+      1. 1-month trailing return > 0  (short-term trend has recovered)
+      2. 3-month trailing return > 0  (medium-term trend is also positive)
+
+    This is simple, reliable, and directly answers "has the market recovered?"
+    without fragile Z-score machinery that requires a warm-up period and
+    produces near-zero variance on rank scores (causing permanent CASH lock).
     """
-    if compute_rank_score_zscore(rank_score_history) < ZSCORE_EXIT_THRESHOLD:
-        return False
-    if momentum_scores.get(best_etf, {}).get("ret_1m", -1.0) <= 0:
-        return False
-    return True
+    info = momentum_scores.get(best_etf, {})
+    return info.get("ret_1m", -1.0) > 0 and info.get("ret_3m", -1.0) > 0
 
 
 # ── Walk-forward backtest ─────────────────────────────────────────────────────
@@ -175,19 +160,10 @@ def execute_backtest_b(df: pd.DataFrame,
                        lookback: int,
                        fee_bps: int,
                        tbill_rate: float) -> dict:
-    """
-    Run the Option B backtest.
-
-    Returns the usual metrics dict PLUS:
-      - ended_in_cash      : bool
-      - rank_score_history : the final 63-entry buffer used for Z-score
-                             re-entry. app.py reuses this directly for the
-                             live signal check — no recomputation needed.
-    """
-    daily_tbill        = tbill_rate / 252
-    fee                = fee_bps / 10000
-    today              = datetime.now().date()
-    test_indices       = list(range(*test_slice.indices(len(df))))
+    daily_tbill  = tbill_rate / 252
+    fee          = fee_bps / 10000
+    today        = datetime.now().date()
+    test_indices = list(range(*test_slice.indices(len(df))))
 
     lb_long  = lookback
     lb_mid   = max(lookback // 2, 5)
@@ -196,13 +172,12 @@ def execute_backtest_b(df: pd.DataFrame,
     if not test_indices:
         return {}
 
-    strat_rets         = []
-    audit_trail        = []
-    date_index         = []
-    in_cash            = False
-    ret_history        = [0.0, 0.0]
-    current_etf        = None
-    rank_score_history = []   # rolling 63-entry buffer — returned to caller
+    strat_rets  = []
+    audit_trail = []
+    date_index  = []
+    in_cash     = False
+    ret_history = [0.0, 0.0]   # actual ETF returns — always tracks market
+    current_etf = None
 
     for idx in test_indices:
         trade_date = df.index[idx]
@@ -214,19 +189,14 @@ def execute_backtest_b(df: pd.DataFrame,
         if best_etf is None:
             best_etf = active_etfs[0]
 
-        # Maintain rank score history
-        rank_score_history.append(mom_scores[best_etf]["rank_score"])
-        if len(rank_score_history) > 63:
-            rank_score_history.pop(0)
-
-        # CASH entry
+        # CASH entry: 2-day compound return of actual ETF returns
         two_day = (1 + ret_history[-2]) * (1 + ret_history[-1]) - 1
         if two_day <= CASH_DRAWDOWN_TRIGGER:
             in_cash     = True
             current_etf = None
 
-        # CASH exit
-        if in_cash and should_exit_cash(best_etf, mom_scores, rank_score_history):
+        # CASH exit: top ETF 1m AND 3m trailing returns positive
+        if in_cash and should_exit_cash(best_etf, mom_scores):
             in_cash     = False
             current_etf = None
 
@@ -248,7 +218,7 @@ def execute_backtest_b(df: pd.DataFrame,
             net_ret        = raw_ret - (fee if switched else 0.0)
             actual_etf_ret = raw_ret
 
-        # Track actual ETF returns (not T-bill) so drawdown trigger stays live
+        # Always track actual ETF return so drawdown trigger sees real moves
         ret_history.append(actual_etf_ret)
         ret_history = ret_history[-2:]
 
@@ -270,12 +240,11 @@ def execute_backtest_b(df: pd.DataFrame,
 
     return {
         **metrics,
-        "strat_rets":         strat_rets,
-        "audit_trail":        audit_trail,
-        "current_etf":        current_etf,
-        "momentum_scores":    mom_scores,
-        "ended_in_cash":      in_cash,
-        "rank_score_history": list(rank_score_history),  # ← returned to app.py
+        "strat_rets":   strat_rets,
+        "audit_trail":  audit_trail,
+        "current_etf":  current_etf,
+        "momentum_scores": mom_scores,
+        "ended_in_cash":   in_cash,
     }
 
 
