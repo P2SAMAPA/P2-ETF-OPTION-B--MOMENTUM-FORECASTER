@@ -64,3 +64,4 @@ Based on: *A Quantitative Trading Strategy Based on A Position Management Model*
 ```
 
 Set `HF_TOKEN` as a secret in HF Space settings.
+Set 'FRED_API_KEY' as a secret in HF Space settings.
