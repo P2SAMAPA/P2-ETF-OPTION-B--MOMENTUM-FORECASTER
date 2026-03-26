@@ -2,16 +2,11 @@
 option_b_momentum.py
 Option B: Cross-Sectional Momentum ETF Rotation — THREE-FACTOR COMPOSITE.
 
-Composite rank score (all rank-based, lower = better):
-  50% — Trailing return rank       (price momentum over 3 lookback windows)
-  25% — Relative strength vs SPY   (ETF return / SPY return, same windows)
-  25% — MA slope rank              (50d MA / 200d MA ratio — trend acceleration)
-
 CASH overlay:
   ENTER: 2-day compound return of held ETF <= -10%
-  EXIT:  top-ranked ETF has BOTH 1-month AND 3-month trailing returns > 0,
-         AND at least 2 days have passed since entering CASH (prevents
-         same-day re-entry when strong LT momentum masks a fresh drawdown).
+  EXIT:  top-ranked ETF has 1-month trailing return > 0,
+         AND at least MIN_CASH_DAYS days have passed (to avoid instant re‑entry),
+         OR after MAX_CASH_DAYS days in cash (forced exit on 3rd day).
 """
 
 import numpy as np
@@ -20,6 +15,7 @@ from datetime import datetime
 
 CASH_DRAWDOWN_TRIGGER = -0.10
 MIN_CASH_DAYS         = 2      # must stay in CASH at least this many days
+MAX_CASH_DAYS         = 2      # force exit after this many days in CASH
 
 LOOKBACK_1M = 21
 LOOKBACK_3M = 63
@@ -30,8 +26,7 @@ W_RS_SPY   = 0.25
 W_MA_SLOPE = 0.25
 
 
-# ── Price helpers ─────────────────────────────────────────────────────────────
-
+# ── Price helpers (unchanged) ──────────────────────────────────────────────────
 def _trailing_return(prices: pd.Series, lookback: int) -> float:
     clean = prices.dropna()
     if len(clean) < lookback + 1:
@@ -76,8 +71,7 @@ def _rank_dict(values: dict, higher_is_better: bool = True) -> dict:
     return {etf: rank for rank, etf in enumerate(sorted_etfs, start=1)}
 
 
-# ── Core scoring ──────────────────────────────────────────────────────────────
-
+# ── Core scoring (unchanged) ──────────────────────────────────────────────────
 def compute_momentum_scores(df: pd.DataFrame, active_etfs: list,
                              as_of_idx: int,
                              lb_short: int = LOOKBACK_1M,
@@ -139,36 +133,32 @@ def select_top_etf(momentum_scores: dict) -> tuple:
     return best_etf, momentum_scores[best_etf]["final_score"]
 
 
-# ── CASH re-entry ─────────────────────────────────────────────────────────────
-
+# ── CASH re‑entry (modified) ──────────────────────────────────────────────────
 def should_exit_cash(best_etf: str,
                      momentum_scores: dict,
                      cash_days_held: int) -> bool:
     """
-    Exit CASH when ALL of:
-      1. At least MIN_CASH_DAYS have passed since entering CASH.
-         Prevents same-day re-entry when long-term momentum is still
-         positive but a fresh -10% drawdown just fired.
-      2. Top ETF 1-month trailing return > 0  (short-term trend recovered)
-      3. Top ETF 3-month trailing return > 0  (medium-term trend recovered)
+    Exit CASH when:
+      1. cash_days_held >= MAX_CASH_DAYS (forced exit)
+      OR
+      2. cash_days_held >= MIN_CASH_DAYS AND top ETF 1‑month return > 0
+         (no requirement on 3‑month return)
     """
-    if cash_days_held < MIN_CASH_DAYS:
-        return False
+    # Forced exit after MAX_CASH_DAYS days
+    if cash_days_held >= MAX_CASH_DAYS:
+        return True
 
-    info  = momentum_scores.get(best_etf, {})
-    ret1m = info.get("ret_1m", -1.0)
-    ret3m = info.get("ret_3m", -1.0)
+    # Early exit condition: after minimum days, require only 1m return positive
+    if cash_days_held >= MIN_CASH_DAYS:
+        info  = momentum_scores.get(best_etf, {})
+        ret1m = info.get("ret_1m", -1.0)
+        if ret1m is not None and not np.isnan(ret1m) and ret1m > 0:
+            return True
 
-    if ret1m is None or np.isnan(ret1m) or ret1m <= 0:
-        return False
-    if ret3m is None or np.isnan(ret3m) or ret3m <= 0:
-        return False
-
-    return True
+    return False
 
 
-# ── Walk-forward backtest ─────────────────────────────────────────────────────
-
+# ── Walk‑forward backtest (unchanged except for the new exit logic) ──────────
 def execute_backtest_b(df: pd.DataFrame,
                        active_etfs: list,
                        test_slice: slice,
@@ -191,7 +181,7 @@ def execute_backtest_b(df: pd.DataFrame,
     audit_trail   = []
     date_index    = []
     in_cash       = False
-    cash_days_held = 0      # counts how many days we've been in CASH
+    cash_days_held = 0
     ret_history   = [0.0, 0.0]
     current_etf   = None
 
@@ -208,14 +198,12 @@ def execute_backtest_b(df: pd.DataFrame,
         # ── CASH entry ────────────────────────────────────────────────────────
         two_day = (1 + ret_history[-2]) * (1 + ret_history[-1]) - 1
         if two_day <= CASH_DRAWDOWN_TRIGGER:
-            if not in_cash:                 # only reset counter on fresh entry
+            if not in_cash:
                 in_cash        = True
                 cash_days_held = 0
                 current_etf    = None
 
         # ── CASH exit ─────────────────────────────────────────────────────────
-        # cash_days_held is incremented BEFORE the exit check so day-0
-        # (the day we entered) counts as 0 and exit requires >= MIN_CASH_DAYS.
         if in_cash:
             cash_days_held += 1
             if should_exit_cash(best_etf, mom_scores, cash_days_held):
@@ -241,7 +229,6 @@ def execute_backtest_b(df: pd.DataFrame,
             net_ret        = raw_ret - (fee if switched else 0.0)
             actual_etf_ret = raw_ret
 
-        # Always track actual ETF return so drawdown trigger stays live
         ret_history.append(actual_etf_ret)
         ret_history = ret_history[-2:]
 
