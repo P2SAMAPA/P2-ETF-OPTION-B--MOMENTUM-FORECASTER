@@ -10,7 +10,8 @@ import pandas as pd
 import numpy as np
 
 from loader import (load_dataset, check_data_freshness, prepare_data,
-                    dataset_summary, get_next_trading_day, get_est_time)
+                    dataset_summary, get_next_trading_day, get_est_time,
+                    FI_ETFS, EQUITY_ETFS)
 from cache import (make_cache_key, save_cache, load_cache, make_lb_cache_key)
 from components import (show_freshness_status, show_availability_warnings,
                         show_signal_banner, show_metrics_row,
@@ -53,6 +54,7 @@ for key, default in [
     ("spy_ann", None),
     ("fee_bps", 10),
     ("option", "Option A — ARIMA Forecaster"),
+    ("asset_class", "FI"),  # New: track asset class for Option B
     ("lb_short", 42),
     ("lb_mid", 84),
     ("lb_long", 126),
@@ -75,11 +77,28 @@ with st.sidebar:
     if option == "Option A — ARIMA Forecaster":
         start_yr        = st.slider("📅 Start Year", 2008, 2025, 2015)
         lookback_months = None
+        asset_class     = "FI"  # Default for Option A
         st.caption("🔍 **Auto-lookback:** 30 / 45 / 60d via val MAE")
         st.caption("⏱️ **Hold periods:** 1d · 3d · 5d net of fees")
         st.caption("📄 *Based on Xu et al., TUST China (2022)*")
     else:
         start_yr        = None
+        # ── NEW: Asset Class Selection for Option B ──────────────────────────
+        asset_class = st.radio(
+            "📊 Asset Class",
+            ["Fixed Income", "Equity"],
+            index=0,
+            horizontal=True,
+        )
+        # Convert to short code for internal use
+        asset_class_code = "FI" if asset_class == "Fixed Income" else "Equity"
+
+        # Show available ETFs for selected asset class
+        if asset_class == "Fixed Income":
+            st.caption(f"🏦 ETFs: {', '.join(FI_ETFS)}")
+        else:
+            st.caption(f"📈 ETFs: {', '.join(EQUITY_ETFS)}")
+
         lookback_months = st.select_slider(
             "📅 Momentum Lookback",
             options=[3, 6, 9, 12, 15, 18],
@@ -142,27 +161,58 @@ with st.spinner("📡 Loading dataset from HuggingFace..."):
 # ── DEBUG section ─────────────────────────────────────────────────────────────
 st.divider()
 st.subheader("🔍 DEBUG: Dataset Contents")
-etf_cols = [c for c in df_raw.columns
-            if any(e in c for e in ["TLT","VCIT","LQD","HYG","VNQ","SLV","GLD"])]
-st.write("**ETF Columns Found:**", etf_cols)
-for etf in ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]:
-    if etf in df_raw.columns:
-        valid = df_raw[etf].dropna().shape[0]
-        total = df_raw.shape[0]
-        nans  = df_raw[etf].isna().sum()
-        fd    = df_raw[etf].dropna().index[0].strftime("%Y-%m-%d") if valid > 0 else "N/A"
-        ld    = df_raw[etf].dropna().index[-1].strftime("%Y-%m-%d") if valid > 0 else "N/A"
-        st.write(f"**{etf}:** {valid}/{total} valid rows | {nans} NaN | {fd} → {ld}")
-    else:
-        st.write(f"**{etf}:** ❌ Column not found in dataset")
-st.info("⚠️ If VCIT/LQD/HYG show 6 rows or 'Column not found', the issue is in the dataset or loader.py")
+
+# Show both FI and Equity ETF columns
+fi_etfs = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]
+equity_etfs = ["QQQ", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XME", "GDX", "IWM"]
+
+st.write("**Fixed Income ETF Columns Found:**")
+fi_cols = [c for c in df_raw.columns if any(e in c for e in fi_etfs)]
+st.write(fi_cols)
+
+st.write("**Equity ETF Columns Found:**")
+equity_cols = [c for c in df_raw.columns if any(e in c for e in equity_etfs)]
+st.write(equity_cols)
+
+# Show sample data for all ETFs
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("**Fixed Income ETF Status:**")
+    for etf in fi_etfs:
+        if etf in df_raw.columns:
+            valid = df_raw[etf].dropna().shape[0]
+            total = df_raw.shape[0]
+            nans  = df_raw[etf].isna().sum()
+            fd    = df_raw[etf].dropna().index[0].strftime("%Y-%m-%d") if valid > 0 else "N/A"
+            ld    = df_raw[etf].dropna().index[-1].strftime("%Y-%m-%d") if valid > 0 else "N/A"
+            st.write(f"**{etf}:** {valid}/{total} valid rows | {nans} NaN | {fd} → {ld}")
+        else:
+            st.write(f"**{etf}:** ❌ Column not found in dataset")
+
+with col2:
+    st.write("**Equity ETF Status:**")
+    for etf in equity_etfs:
+        if etf in df_raw.columns:
+            valid = df_raw[etf].dropna().shape[0]
+            total = df_raw.shape[0]
+            nans  = df_raw[etf].isna().sum()
+            fd    = df_raw[etf].dropna().index[0].strftime("%Y-%m-%d") if valid > 0 else "N/A"
+            ld    = df_raw[etf].dropna().index[-1].strftime("%Y-%m-%d") if valid > 0 else "N/A"
+            st.write(f"**{etf}:** {valid}/{total} valid rows | {nans} NaN | {fd} → {ld}")
+        else:
+            st.write(f"**{etf}:** ❌ Column not found in dataset")
+
+st.info("⚠️ If ETFs show 'Column not found', the data may not be available in the dataset.")
 st.divider()
 # ── END DEBUG ─────────────────────────────────────────────────────────────────
 
 with st.sidebar:
     st.divider()
     st.subheader("📦 Dataset Info")
-    summ = dataset_summary(df_raw)
+    # Use asset_class_code for dataset summary
+    current_asset_class = asset_class_code if option == "Option B — Momentum Rotation" else "FI"
+    summ = dataset_summary(df_raw, asset_class=current_asset_class)
     if summ:
         st.write(f" Rows: {summ['rows']:,}")
         st.write(f" Range: {summ['start_date']} → {summ['end_date']}")
@@ -174,10 +224,19 @@ with st.sidebar:
 if run_button:
     st.session_state.output_ready = False
     st.session_state.option       = option
+    # Store asset class in session state
+    if option == "Option B — Momentum Rotation":
+        st.session_state.asset_class = asset_class_code
 
     effective_start = start_yr if option == "Option A — ARIMA Forecaster" else 2008
+
+    # Determine asset class for data preparation
+    prep_asset_class = asset_class_code if option == "Option B — Momentum Rotation" else "FI"
+
     with st.spinner("🔧 Preparing data..."):
-        df, availability, active_etfs, tbill_rate = prepare_data(df_raw, effective_start)
+        df, availability, active_etfs, tbill_rate = prepare_data(
+            df_raw, effective_start, asset_class=prep_asset_class
+        )
 
     show_availability_warnings(availability)
     if not active_etfs:
@@ -198,8 +257,10 @@ if run_button:
             f"· ETFs: **{', '.join(active_etfs)}**"
         )
     else:
+        asset_label = "Fixed Income" if prep_asset_class == "FI" else "Equity"
         st.info(
             f"📅 Data through **{df.index[-1].strftime('%Y-%m-%d')}**   "
+            f"· Asset Class: **{asset_label}**   "
             f"· Lookback: up to **18 months** · OOS evaluation: **{n-t2}** days   "
             f"· ETFs: **{', '.join(active_etfs)}**"
         )
@@ -293,15 +354,16 @@ if run_button:
 
         lb_short, lb_mid, lb_long = LB_MAP[lookback_months]
 
+        # Include asset class in cache key for Option B
         cache_key   = make_cache_key(last_date_str, 2008, fee_bps,
-                                     "80/10/10_B", lookback_months)
+                                     f"80/10/10_B_{prep_asset_class}", lookback_months)
         cached_data = load_cache(cache_key)
 
         if cached_data is not None:
             result = cached_data["result"]
             st.success("⚡ Results from cache.")
         else:
-            with st.spinner("⏳ Running momentum backtest on OOS..."):
+            with st.spinner(f"⏳ Running momentum backtest on OOS ({prep_asset_class})..."):
                 result = execute_backtest_b(
                     df=df, active_etfs=active_etfs,
                     test_slice=test_slice, lookback=lb_long,
