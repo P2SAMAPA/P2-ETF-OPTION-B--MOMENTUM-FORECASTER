@@ -21,10 +21,18 @@ except Exception:
 DATASET_REPO   = "P2SAMAPA/fi-etf-macro-signal-master-data"
 PARQUET_FILE   = "master_data.parquet"
 
-# ── UPDATED ETF LIST ─────────────────────────────────────────────────────────
-# Removed: TBT
-# Added: VCIT, LQD, HYG (Fixed Income ETFs)
-TARGET_ETFS    = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]
+# ── ASSET CLASS ETF LISTS ────────────────────────────────────────────────────
+# Fixed Income ETFs
+FI_ETFS = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]
+
+# Equity ETFs
+EQUITY_ETFS = ["QQQ", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XME", "GDX", "IWM"]
+
+# Combined list for backwards compatibility
+ALL_ETFS = FI_ETFS + EQUITY_ETFS
+
+# Default to FI for backwards compatibility
+TARGET_ETFS = FI_ETFS
 
 BENCHMARK_COLS = ["SPY", "AGG"]
 TBILL_COL      = "TBILL_3M"
@@ -141,11 +149,29 @@ def _to_returns(series: pd.Series) -> pd.Series:
 
 # ── Prepare sliced dataset ────────────────────────────────────────────────────
 
-def prepare_data(df: pd.DataFrame, start_yr: int):
+def prepare_data(df: pd.DataFrame, start_yr: int, asset_class: str = "FI"):
+    """
+    Prepare data for specified asset class.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Raw dataset
+    start_yr : int
+        Start year for data filtering
+    asset_class : str
+        "FI" for Fixed Income or "Equity" for Equity ETFs
+    """
     df = df[df.index.year >= start_yr].copy()
 
+    # Select ETF list based on asset class
+    if asset_class == "Equity":
+        target_etfs = EQUITY_ETFS
+    else:  # Default to FI
+        target_etfs = FI_ETFS
+
     availability = {}
-    for etf in TARGET_ETFS:
+    for etf in target_etfs:
         if etf not in df.columns:
             availability[etf] = {
                 "available": False,
@@ -178,21 +204,39 @@ def prepare_data(df: pd.DataFrame, start_yr: int):
             v = float(raw.iloc[-1])
             tbill_rate = v / 100 if v > 1 else v
 
-    active_etfs = [e for e in TARGET_ETFS if availability.get(e, {}).get("available")]
+    active_etfs = [e for e in target_etfs if availability.get(e, {}).get("available")]
 
     return df, availability, active_etfs, tbill_rate
 
 
 # ── Dataset summary ───────────────────────────────────────────────────────────
 
-def dataset_summary(df: pd.DataFrame) -> dict:
+def dataset_summary(df: pd.DataFrame, asset_class: str = "FI") -> dict:
+    """
+    Generate dataset summary for specified asset class.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Dataset
+    asset_class : str
+        "FI" for Fixed Income or "Equity" for Equity ETFs
+    """
     if df.empty:
         return {}
+
+    # Select ETF list based on asset class
+    if asset_class == "Equity":
+        target_etfs = EQUITY_ETFS
+    else:
+        target_etfs = FI_ETFS
+
     return {
         "rows":       len(df),
         "start_date": df.index[0].strftime("%Y-%m-%d"),
         "end_date":   df.index[-1].strftime("%Y-%m-%d"),
-        "etfs":       [e for e in TARGET_ETFS    if e in df.columns],
+        "etfs":       [e for e in target_etfs if e in df.columns],
         "benchmarks": [b for b in BENCHMARK_COLS if b in df.columns],
         "tbill":      TBILL_COL in df.columns,
+        "asset_class": asset_class,
     }
