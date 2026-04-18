@@ -26,7 +26,7 @@ PARQUET_FILE   = "master_data.parquet"
 FI_ETFS = ["TLT", "VCIT", "LQD", "HYG", "VNQ", "SLV", "GLD"]
 
 # Equity ETFs
-EQUITY_ETFS = ["QQQ", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XME", "GDX", "IWM"]
+EQUITY_ETFS = ["QQQ", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XME", "GDX", "IWF", "XSD", "XBI", "IWM"]
 
 # Combined list for backwards compatibility
 ALL_ETFS = FI_ETFS + EQUITY_ETFS
